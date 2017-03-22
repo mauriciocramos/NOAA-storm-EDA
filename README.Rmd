@@ -1,0 +1,220 @@
+---
+title: "NOAA severe weather report"
+author: "Maurício Collaça Ramos"
+date: "March, 21, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+Sys.setlocale(category = "LC_ALL", locale = "us")
+```
+
+## Synopsis
+
+TODO: Immediately after the title, there should be a synopsis which describes and summarizes your analysis in at most 10 complete sentences.
+
+NOTE: Consider writing your report as if it were to be read by a government or municipal manager who might be responsible for preparing for severe weather events and will need to prioritize resources for different types of events. 
+
+NOTE: The basic goal of this assignment is to explore the NOAA Storm Database and answer some basic questions about severe weather events. You must use the database to answer the questions below and show the code for your entire analysis. Your analysis can consist of tables, figures, or other summaries.
+
+## Data Processing
+
+This report requires additional R packages installed and loaded.
+
+```{r, echo=TRUE, message=FALSE}
+library(dplyr); library(ggplot2)
+```
+
+The versions used in this research are dplyr `r packageVersion("dplyr")` and ggplot2 `r packageVersion("ggplot2")`.
+
+The data source for this report is available at:
+
+* https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2.
+
+The data documentation is available at:
+
+* National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
+* National Climatic Data Center Storm Events [FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
+
+The data is automatically downloaded from the site.
+
+```{r}
+url = "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+destfile = "StormData.csv.bz2"
+if (!file.exists(destfile))
+    download.file(url, destfile, mode = "wb", cacheOK = FALSE, quiet = FALSE)
+```
+
+The data columns used to produce this report are:
+
+* 8-`EVTYPE` - the type of the weather phenomena event 
+* 23-`FATALITIES` - number of fatalities
+* 24-`INJURIES` - number of injuries
+* 25-`PROPDMG` - property damage estimate
+* 26-`PROPDMGEXP` - property damage estimate magnitude
+* 27-`CROPDMG`- crop damage estimate
+* 28-`CROPDMGEXP` - crop damage estimate magnitude
+
+Only the necessary columns are loaded.  To avoid losing any meaning, the columns are loaded as character data type and further converted to other data types when necessary.
+
+```{r read.csv}
+if (!exists("StormData"))
+    StormData <- read.csv(destfile, stringsAsFactors = FALSE, colClasses = "character")[,c(8,23:28)]
+```
+
+Selecting and converting columns to appropriate data types:
+
+```{r}
+library(dplyr)
+df <- StormData %>% mutate(FATALITIES = as.integer(FATALITIES),
+                           INJURIES = as.integer(INJURIES), 
+                           PROPDMG = as.numeric(PROPDMG), 
+                           CROPDMG = as.numeric(CROPDMG))
+```
+
+There are no occurrences of missing data in these columns:
+
+```{r}
+sum(is.na(df[,c("EVTYPE", "FATALITIES", "INJURIES","PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]))
+```
+
+The are no occurences of negative values:
+
+```{r}
+sum(df[,c("FATALITIES", "INJURIES","PROPDMG", "CROPDMG")]<0)
+```
+
+According to the documentation:
+
+_"Estimates should be rounded to three significant digits, followed by an alphabetical character signifying the magnitude of the number, i.e., 1.55B for $1,550,000,000. Alphabetical characters used to signify magnitude include “K” for thousands, “M” for millions, and “B” for billions."_
+
+Magnitudes found for property damage estimates:
+
+```{r}
+unique(df$PROPDMGEXP)
+```
+
+Magnitudes found for crop damage estimates:
+
+```{r}
+unique(df$CROPDMGEXP)
+```
+
+Standardizing magnitudes in capital letters:
+
+```{r}
+df <- df %>% mutate(PROPDMGEXP = toupper(PROPDMGEXP), CROPDMGEXP = toupper(CROPDMGEXP))
+```
+
+Number of property damage estimates with invalid magnitudes:
+
+```{r}
+invalidPropDmg <- df$PROPDMG > 0 & !df$PROPDMGEXP %in% c("K","M","B")
+sum(invalidPropDmg)
+```
+
+Proportion of invalid property damage estimates in relation to the valid property damage estimates:
+
+```{r}
+validPropDmg <- df$PROPDMG > 0 & df$PROPDMGEXP %in% c("K","M","B")
+sprintf("%1.2f%%", sum(invalidPropDmg)/sum(validPropDmg)*100)
+```
+
+Number of crop damage estimates with invalid magnitudes:
+
+```{r}
+invalidCropDmg <- df$CROPDMG > 0 & !df$CROPDMGEXP %in% c("K","M","B")
+sum(invalidCropDmg)
+```
+
+Proportion of invalid crop damage estimates in relation to the valid crop damage estimates:
+
+```{r}
+validCropDmg <- df$CROPDMG > 0 & df$CROPDMGEXP %in% c("K","M","B")
+sprintf("%1.2f%%", sum(invalidCropDmg)/sum(validCropDmg)*100)
+```
+
+These invalid crop and property damage estimates will not be considered when calculating economic consequences, therefore, they will be replace with `NA` missing values in order to prevent miscalculations.
+
+```{r}
+df$PROPDMG[invalidPropDmg] <- NA
+df$CROPDMG[invalidPropDmg] <- NA
+df$PROPDMGEXP[invalidPropDmg] <- NA
+df$CROPDMGEXP[invalidPropDmg] <- NA
+warnings()
+```
+
+Normalize the quantitative variables `PROPDMG` and `CROPDMG` in US dollars by magnifying them with their respective magnitudes `PROPDMGEXP` and `CROPDMGEXP`.
+
+```{r}
+df$PROPDMG[validPropDmg] <-
+    df$PROPDMG[validPropDmg] * 10 ^ (match(df$PROPDMGEXP[validPropDmg], c("K","M","B"))*3)
+df$CROPDMG[validCropDmg] <- 
+    df$CROPDMG[validCropDmg] * 10 ^ (match(df$CROPDMGEXP[validCropDmg], c("K","M","B"))*3)
+#df$PROPDMGEXP <- NULL
+#df$CROPDMGEXP <- NULL
+warnings()
+```
+
+According to the documentation, there should be 48 event types, however, there are many inconsistent event types, totalling more event types than expected:
+
+```{r}
+(totalTypes <- length(unique(df$EVTYPE)))
+```
+
+In order to try to reduce some inconsistency, capitalize all event types and group them aggregating their quantitative variables `FATALITIES`, `INJURIES`, `PROPDMG` and `CROPDMG`.
+
+```{r}
+df <- df %>%
+    mutate(EVTYPE = toupper(EVTYPE)) %>%
+    group_by(EVTYPE) %>%
+    summarise(FATALITIES = sum(FATALITIES),
+              INJURIES = sum(INJURIES),
+              PROPDMG = sum(PROPDMG),
+              CROPDMG = sum(CROPDMG)) %>% ungroup
+warnings()
+```
+
+The last transformation reduced the inconsistencies from `r totalTypes` to:
+```{r}
+length(unique(df$EVTYPE))
+```
+
+## Results
+
+**Across the United States, which types of events (as indicated in the `EVTYPE` variable) are most harmful with respect to population health?**
+
+**Top 10 most harmful types of events**
+
+```{r}
+harmful <- df %>% select(EVTYPE, FATALITIES, INJURIES) %>% mutate(TOTAL = FATALITIES + INJURIES) %>% arrange(desc(TOTAL)) %>% slice(1:10)
+harmful
+```
+
+```{r}
+ggplot(harmful, aes(x=EVTYPE, y=TOTAL)) + geom_col() +
+    xlab("Event type") + ylab("Fatalities and injuries") +
+    ggtitle(paste0("Top ",nrow(harmful)," most harmful types of events")) +
+    theme(axis.text.x = element_text(angle = 20, vjust = 1, hjust=1))
+```
+
+**Across the United States, which types of events have the greatest economic consequences?**
+
+**Top 10 most costly types of events**
+
+```{r}
+costly <- df %>% select(EVTYPE, PROPDMG, CROPDMG) %>%
+    mutate(PROPDMG = PROPDMG / 10^6,
+           CROPDMG = CROPDMG / 10^6,
+           TOTAL = (PROPDMG + CROPDMG)) %>%
+    arrange(desc(TOTAL)) %>% slice(1:10)
+costly
+```
+
+```{r}
+ggplot(costly, aes(x=EVTYPE, y=TOTAL)) + geom_col() +
+    xlab("Event type") + ylab("US billions") +
+    ggtitle(paste0("Top ",nrow(costly)," most costly types of events")) +
+    theme(axis.text.x = element_text(angle = 20, vjust = 1, hjust=1))
+```
