@@ -2,7 +2,12 @@
 title: "NOAA severe weather report"
 author: "Maurício Collaça Ramos"
 date: "March, 21, 2017"
-output: html_document
+output: 
+  html_document: 
+    fig_height: 6.42
+    fig_width: 9
+    keep_md: yes
+    number_sections: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -10,23 +15,45 @@ knitr::opts_chunk$set(echo = TRUE)
 Sys.setlocale(category = "LC_ALL", locale = "us")
 ```
 
-## Synopsis
+# Synopsis
 
-TODO: Immediately after the title, there should be a synopsis which describes and summarizes your analysis in at most 10 complete sentences.
+This analysis explores the NOAA Storm Database to figure out the weather events that are the most harmful to the health and to the economy in United States.  These answers are followed by the total number of fatalities, injuries and costs in properties and crops.
 
-NOTE: Consider writing your report as if it were to be read by a government or municipal manager who might be responsible for preparing for severe weather events and will need to prioritize resources for different types of events. 
+The data processing section of this report is very technical and contains information about the data source, environment used, programming language, data validations and transformations necessary to achieve the answers.  This section also indicates some inconsistencies in the NOAA database that seems not to jeopardize the overall quality of the answers.
 
-NOTE: The basic goal of this assignment is to explore the NOAA Storm Database and answer some basic questions about severe weather events. You must use the database to answer the questions below and show the code for your entire analysis. Your analysis can consist of tables, figures, or other summaries.
+The result section of this report contains the actual answers to the questions where one can see tables and plots.
 
-## Data Processing
+# Data Processing
 
-This report requires additional R packages installed and loaded.
+## Environment used
 
+Hardware:
+
+    Processor: Inter(R) Core(TM) i5-2300 CPU @ 2.80Ghz
+    Number of Cores: 4
+    Installed RAM: 8.00 GB  
+    System type: x64-based processor
+
+Operating System:
+```{r}
+Sys.info()[c("sysname","release")]
+```
+
+R version:
+```{r}
+R.Version()[c("version.string", "arch")]
+```
+
+Additional R packages installed and loaded.
 ```{r, echo=TRUE, message=FALSE}
 library(dplyr); library(ggplot2)
 ```
+* dplyr `r packageVersion("dplyr")`
+* ggplot2 `r packageVersion("ggplot2")`.
 
-The versions used in this research are dplyr `r packageVersion("dplyr")` and ggplot2 `r packageVersion("ggplot2")`.
+RStudio Desktop version 1.0.136
+
+## Data source
 
 The data source for this report is available at:
 
@@ -37,53 +64,79 @@ The data documentation is available at:
 * National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
 * National Climatic Data Center Storm Events [FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
 
+## Loading data
+
 The data is automatically downloaded from the site.
 
 ```{r}
-url = "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
-destfile = "StormData.csv.bz2"
-if (!file.exists(destfile))
-    download.file(url, destfile, mode = "wb", cacheOK = FALSE, quiet = FALSE)
+dataFile <- "StormData.csv.bz2"
+if (!file.exists(dataFile))
+    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", dataFile, mode = "wb", cacheOK = FALSE, quiet = FALSE)
 ```
 
-The data columns used to produce this report are:
+To avoid losing any meaning, the columns are loaded as character data type and further converted to other data types as needend.
 
-* 8-`EVTYPE` - the type of the weather phenomena event 
-* 23-`FATALITIES` - number of fatalities
-* 24-`INJURIES` - number of injuries
-* 25-`PROPDMG` - property damage estimate
-* 26-`PROPDMGEXP` - property damage estimate magnitude
-* 27-`CROPDMG`- crop damage estimate
-* 28-`CROPDMGEXP` - crop damage estimate magnitude
-
-Only the necessary columns are loaded.  To avoid losing any meaning, the columns are loaded as character data type and further converted to other data types when necessary.
-
-```{r read.csv}
+```{r read.csv, cache=TRUE}
 if (!exists("StormData"))
-    StormData <- read.csv(destfile, stringsAsFactors = FALSE, colClasses = "character")[,c(8,23:28)]
+    StormData <- read.csv(dataFile, stringsAsFactors = FALSE, colClasses = "character")
 ```
 
-Selecting and converting columns to appropriate data types:
+## Transformations
+
+The columns used to produce this report are:
+
+* `EVTYPE` - the type of the weather phenomena event.
+* `STATE` - The US state, district, territory or possession.
+* `FATALITIES` - number of fatalities.
+* `INJURIES` - number of injuries.
+* `PROPDMG` - property damage estimate.
+* `PROPDMGEXP` - property damage estimate magnitude.
+* `CROPDMG`- crop damage estimate.
+* `CROPDMGEXP` - crop damage estimate magnitude.
+
+Selecting and converting columns to appropriate data types. Removing duplicated, leading and trailing whitespaces from the event type to avoid classification breaks:
 
 ```{r}
 library(dplyr)
-df <- StormData %>% mutate(FATALITIES = as.integer(FATALITIES),
-                           INJURIES = as.integer(INJURIES), 
-                           PROPDMG = as.numeric(PROPDMG), 
-                           CROPDMG = as.numeric(CROPDMG))
+df <- StormData %>%
+    select(EVTYPE, STATE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
+    mutate(EVTYPE = gsub(" +"," ",trimws(EVTYPE)),
+           FATALITIES = as.integer(FATALITIES),
+           INJURIES = as.integer(INJURIES),
+           PROPDMG = as.numeric(PROPDMG),
+           CROPDMG = as.numeric(CROPDMG))
 ```
+
+### US States, Districts, Territories and Possessions
+
+There are a number of events whose abbreviations are not a valid US state, district, territory or possession.
+
+```{r}
+abbreviations <- c("AK","AL","AR","AS","AZ","CA","CO","CT","DC","DE","FL","FM","GA","GU","HI","IA","ID","IL","IN","KS","KY","LA","MA","MD","ME","MH","MI","MN","MO","MP","MS","MT","NC","ND","NE","NH","NJ","NM","NV","NY","OH","OK","OR","PA","PR","PW","RI","SC","SD","TN","TX","UM","UT","VA","VI","VT","WA","WI","WV","WY")
+unique(df$STATE[!df$STATE %in% abbreviations])
+```
+
+Therefore, their respective events are removed.
+
+```{r}
+df <- df %>% filter(STATE %in% abbreviations)
+```
+
+### Missing and invalid values
 
 There are no occurrences of missing data in these columns:
 
 ```{r}
-sum(is.na(df[,c("EVTYPE", "FATALITIES", "INJURIES","PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]))
+sum(is.na(df[,c("EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]))
 ```
 
 The are no occurences of negative values:
 
 ```{r}
-sum(df[,c("FATALITIES", "INJURIES","PROPDMG", "CROPDMG")]<0)
+sum(df[, c("FATALITIES", "INJURIES","PROPDMG", "CROPDMG")] < 0)
 ```
+
+### Property and crop damage estimates
 
 According to the documentation:
 
@@ -139,82 +192,104 @@ These invalid crop and property damage estimates will not be considered when cal
 
 ```{r}
 df$PROPDMG[invalidPropDmg] <- NA
-df$CROPDMG[invalidPropDmg] <- NA
 df$PROPDMGEXP[invalidPropDmg] <- NA
-df$CROPDMGEXP[invalidPropDmg] <- NA
-warnings()
+df$CROPDMG[invalidCropDmg] <- NA
+df$CROPDMGEXP[invalidCropDmg] <- NA
 ```
 
-Normalize the quantitative variables `PROPDMG` and `CROPDMG` in US dollars by magnifying them with their respective magnitudes `PROPDMGEXP` and `CROPDMGEXP`.
+Normalizing the quantitative variables `PROPDMG` and `CROPDMG` in US dollars by magnifying them with their respective magnitudes `PROPDMGEXP` and `CROPDMGEXP`.
 
 ```{r}
 df$PROPDMG[validPropDmg] <-
-    df$PROPDMG[validPropDmg] * 10 ^ (match(df$PROPDMGEXP[validPropDmg], c("K","M","B"))*3)
-df$CROPDMG[validCropDmg] <- 
-    df$CROPDMG[validCropDmg] * 10 ^ (match(df$CROPDMGEXP[validCropDmg], c("K","M","B"))*3)
-#df$PROPDMGEXP <- NULL
-#df$CROPDMGEXP <- NULL
-warnings()
+    df$PROPDMG[validPropDmg] * (10^(match(df$PROPDMGEXP[validPropDmg], c("K","M","B"))*3))
+df$CROPDMG[validCropDmg] <-
+    df$CROPDMG[validCropDmg] * (10^(match(df$CROPDMGEXP[validCropDmg], c("K","M","B"))*3))
+df$PROPDMGEXP <- NULL
+df$CROPDMGEXP <- NULL
 ```
 
-According to the documentation, there should be 48 event types, however, there are many inconsistent event types, totalling more event types than expected:
+### Event types
+
+According to the documentation:
+
+_"2.1 Permitted Storm Data Events.  The only events permitted in Storm Data are listed in Table 1 of Section 2.1.1."_
+
+There should be only 48 event types as listed above, however, the data set contains many inconsistent event types:
 
 ```{r}
 (totalTypes <- length(unique(df$EVTYPE)))
 ```
 
-In order to try to reduce some inconsistency, capitalize all event types and group them aggregating their quantitative variables `FATALITIES`, `INJURIES`, `PROPDMG` and `CROPDMG`.
+In order to reduce some inconsistency, additional transformations take place:
+
+1. Capitalize all event types and group them aggregating their quantitative variables `FATALITIES`, `INJURIES`, `PROPDMG` and `CROPDMG`.
+2. Filter event types with fatalities, injuries or damages to properties and crops.
 
 ```{r}
 df <- df %>%
     mutate(EVTYPE = toupper(EVTYPE)) %>%
     group_by(EVTYPE) %>%
-    summarise(FATALITIES = sum(FATALITIES),
-              INJURIES = sum(INJURIES),
-              PROPDMG = sum(PROPDMG),
-              CROPDMG = sum(CROPDMG)) %>% ungroup
-warnings()
+    summarise(FATALITIES = sum(FATALITIES, na.rm = TRUE),
+              INJURIES = sum(INJURIES, na.rm = TRUE),
+              TOTALHITS = FATALITIES + INJURIES,
+              PROPDMG = sum(PROPDMG, na.rm = TRUE),
+              CROPDMG = sum(CROPDMG, na.rm = TRUE),
+              TOTALLOSSES = PROPDMG + CROPDMG) %>%
+    filter(TOTALHITS > 0 | TOTALLOSSES > 0)%>%
+    as.data.frame()
 ```
 
 The last transformation reduced the inconsistencies from `r totalTypes` to:
+
 ```{r}
 length(unique(df$EVTYPE))
 ```
 
-## Results
+This is still much greater than the specified in the documentation but to reclassify all these event types is a huge work and out of the scope of this report.
+
+# Results
+
+## The types of events most harmful to the health
 
 **Across the United States, which types of events (as indicated in the `EVTYPE` variable) are most harmful with respect to population health?**
 
-**Top 10 most harmful types of events**
+The criteria used to pick the the events that are most harmful to the health is the sample quantile corresponding to 95% probablity.
 
-```{r}
-harmful <- df %>% select(EVTYPE, FATALITIES, INJURIES) %>% mutate(TOTAL = FATALITIES + INJURIES) %>% arrange(desc(TOTAL)) %>% slice(1:10)
-harmful
+```{r, results='asis'}
+harmful <- df %>% select(EVTYPE, TOTALHITS) %>%
+    filter(TOTALHITS >= quantile(TOTALHITS, 0.95)) %>%
+    arrange(desc(TOTALHITS))
+knitr::kable(harmful, col.names = c("Type of event", "Fatalities and injuries"))
 ```
 
-```{r}
-ggplot(harmful, aes(x=EVTYPE, y=TOTAL)) + geom_col() +
+Plotting a bar chart of the top `r nrow(harmful)` most harmful types of events.
+
+```{r most-harmful-health-types-of-events}
+ggplot(harmful, aes(x=EVTYPE, y=TOTALHITS)) + geom_col() +
     xlab("Event type") + ylab("Fatalities and injuries") +
-    ggtitle(paste0("Top ",nrow(harmful)," most harmful types of events")) +
-    theme(axis.text.x = element_text(angle = 20, vjust = 1, hjust=1))
+    ggtitle(paste0("Top ",nrow(harmful)," most harmful to the health types of events")) +
+    theme(axis.text.x = element_text(angle = 25, vjust = 1, hjust=1))
 ```
+
+## The most costly types of events
 
 **Across the United States, which types of events have the greatest economic consequences?**
 
-**Top 10 most costly types of events**
+The criteria used to pick the most costly events is the sample quantile corresponding to 95% probablity.  The total property and crop damages are scaled to billions of US dollars for easier reading.
 
-```{r}
-costly <- df %>% select(EVTYPE, PROPDMG, CROPDMG) %>%
-    mutate(PROPDMG = PROPDMG / 10^6,
-           CROPDMG = CROPDMG / 10^6,
-           TOTAL = (PROPDMG + CROPDMG)) %>%
-    arrange(desc(TOTAL)) %>% slice(1:10)
-costly
+```{r, results='asis'}
+costly <- df %>% select(EVTYPE, TOTALLOSSES) %>%
+    mutate(TOTALLOSSES = round(TOTALLOSSES / (10^9), 3)) %>%
+    filter(TOTALLOSSES >= quantile(TOTALLOSSES, 0.95)) %>%
+    arrange(desc(TOTALLOSSES))
+knitr::kable(costly, col.names = c("Type of event", "Property and crop damages (US billions)"))
 ```
 
-```{r}
-ggplot(costly, aes(x=EVTYPE, y=TOTAL)) + geom_col() +
-    xlab("Event type") + ylab("US billions") +
+Plotting a bar chart of the top `r nrow(costly)` most costly types of events.
+
+```{r most-costly-types-of-events}
+ggplot(costly, aes(x=EVTYPE, y=TOTALLOSSES)) + geom_col() +
+    xlab("Event type") + ylab("Property and crop damages (US billions)") +
     ggtitle(paste0("Top ",nrow(costly)," most costly types of events")) +
-    theme(axis.text.x = element_text(angle = 20, vjust = 1, hjust=1))
+    theme(axis.text.x = element_text(angle = 25, vjust = 1, hjust=1))
 ```
